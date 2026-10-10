@@ -4,8 +4,7 @@ const cfg=window.COURSE_CONFIG;
 const whatsapp=(msg)=>
  `https://wa.me/${cfg.whatsappNumber}?text=${encodeURIComponent(msg)}`;
 
-const general=
- 'Namaste! English Speaking Course A to Z (5 Parts, Rs.99) को बारेमा जानकारी चाहियो।';
+const general='Namaste, I want to buy the English Speaking Course for Rs.99.';
 
 document.getElementById('whatsappButton').href=whatsapp(general);
 
