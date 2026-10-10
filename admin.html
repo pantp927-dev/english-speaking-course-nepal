@@ -114,8 +114,7 @@ async function load(){
    const a=document.createElement('article');
 
    const h=document.createElement('p');
-   h.textContent=
-    `${o.name} | ${o.phone} | Txn: ${o.transaction} | ${o.createdAt}`;
+   h.textContent=`${o.name} | ${o.phone} | ${o.createdAt}`;
    a.append(h);
 
    const status=document.createElement('p');
