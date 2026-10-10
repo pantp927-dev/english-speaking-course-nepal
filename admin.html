@@ -1,4 +1,151 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Admin</title><style>body{font:16px system-ui;max-width:900px;margin:30px auto;padding:12px}section{border:1px solid #ddd;padding:18px;margin:18px 0;border-radius:12px}button{padding:10px;cursor:pointer}input{margin:8px}article{border-top:1px solid #ddd;padding:15px 0;overflow-wrap:anywhere}</style></head><body><h1>Course Admin</h1><p>Only approve after independently confirming Rs.99 arrived in your bank/wallet. Then copy the access link and send it to the buyer on WhatsApp.</p><section><h2>Upload the 5 PDFs</h2><div id="books"></div></section><section><h2>Payment requests</h2><button onclick="load()">Refresh</button><div id="orders"></div></section><script>
-const el=document.getElementById('orders');async function api(url,opts){const r=await fetch(url,opts),data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data}
-async function books(){const items=await api('/api/admin/ebooks');document.getElementById('books').innerHTML=items.map(x=>`<form data-part="${x.part}">Part ${x.part}: ${x.uploaded?'✅ Uploaded':'❌ Missing'} <input name="ebook" type="file" accept="application/pdf" required><button>Upload</button></form>`).join('');document.querySelectorAll('form[data-part]').forEach(f=>f.onsubmit=async e=>{e.preventDefault();try{await api('/api/admin/ebooks/'+f.dataset.part,{method:'POST',body:new FormData(f)});await books()}catch(err){alert(err.message)}})}
-async function load(){try{const orders=await api('/api/admin/orders');el.replaceChildren();orders.slice().reverse().forEach(o=>{const a=document.createElement('article');const h=document.createElement('p');h.textContent=`${o.name} | ${o.phone} | Txn: ${o.transaction} | ${o.status} | ${o.createdAt}`;a.append(h);if(o.proof){const link=document.createElement('a');link.href='/api/admin/proof/'+o.id;link.target='_blank';link.textContent='View screenshot';a.append(link)}const btn=document.createElement('button');btn.textContent=o.status==='approved'?'Get access link':'Approve verified payment';btn.onclick=async()=>{if(o.status!=='approved'&&!confirm('Have you independently verified this payment?'))return;try{const v=await api('/api/admin/approve/'+o.id,{method:'POST'});await navigator.clipboard.writeText(v.url);alert('Access link copied. Send privately via WhatsApp to '+v.phone+'\n'+v.url);load()}catch(err){alert(err.message)}};a.append(document.createElement('br'),btn);el.append(a)})}catch(e){el.textContent=e.message}}books();load();</script></body></html>
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Course Admin</title>
+<style>
+body{font:16px system-ui;max-width:900px;margin:24px auto;padding:12px}
+section{border:1px solid #ddd;padding:18px;margin:18px 0;border-radius:12px}
+button{padding:11px;margin:5px;cursor:pointer;border-radius:7px}
+input{margin:8px}
+article{border-top:1px solid #ddd;padding:15px 0;overflow-wrap:anywhere}
+.approve{background:#16803c;color:white;border:0}
+.reject{background:#c62828;color:white;border:0}
+.status{font-weight:bold}
+</style>
+</head>
+<body>
+
+<h1>Course Admin</h1>
+<p>Verify Rs.99 in your bank or wallet before approving.</p>
+
+<section>
+<h2>Upload the 5 PDFs</h2>
+<div id="books"></div>
+</section>
+
+<section>
+<h2>Payment requests</h2>
+<button onclick="load()">Refresh</button>
+<div id="orders"></div>
+</section>
+
+<script>
+const el=document.getElementById('orders');
+
+async function api(url,opts){
+ const r=await fetch(url,{cache:'no-store',...opts});
+ const data=await r.json();
+ if(!r.ok)throw Error(data.error||'Request failed');
+ return data;
+}
+
+async function books(){
+ const items=await api('/api/admin/ebooks');
+ document.getElementById('books').innerHTML=items.map(x=>
+ `<form data-part="${x.part}">
+ Part ${x.part}: ${x.uploaded?'✅ Uploaded':'❌ Missing'}
+ <input name="ebook" type="file" accept="application/pdf" required>
+ <button>Upload</button>
+ </form>`).join('');
+
+ document.querySelectorAll('form[data-part]').forEach(f=>{
+  f.onsubmit=async e=>{
+   e.preventDefault();
+   try{
+    await api('/api/admin/ebooks/'+f.dataset.part,{
+     method:'POST',body:new FormData(f)
+    });
+    await books();
+   }catch(err){alert(err.message)}
+  };
+ });
+}
+
+async function load(){
+ try{
+  const orders=await api('/api/admin/orders');
+  el.replaceChildren();
+
+  orders.slice().reverse().forEach(o=>{
+   const a=document.createElement('article');
+
+   const h=document.createElement('p');
+   h.textContent=`${o.name} | ${o.phone} | Txn: ${o.transaction} | ${o.createdAt}`;
+   a.append(h);
+
+   const status=document.createElement('p');
+   status.className='status';
+   status.textContent='Status: '+o.status;
+   a.append(status);
+
+   if(o.proof){
+    const link=document.createElement('a');
+    link.href='/api/admin/proof/'+o.id;
+    link.target='_blank';
+    link.textContent='View screenshot';
+    a.append(link,document.createElement('br'));
+   }
+
+   if(o.status==='pending'){
+    const approve=document.createElement('button');
+    approve.className='approve';
+    approve.textContent='✅ Approve';
+
+    approve.onclick=async()=>{
+     if(!confirm('Have you verified Rs.99 in your bank/wallet?'))return;
+     try{
+      const v=await api('/api/admin/approve/'+o.id,{method:'POST'});
+      showLink(v);
+      await load();
+     }catch(err){alert(err.message)}
+    };
+
+    const reject=document.createElement('button');
+    reject.className='reject';
+    reject.textContent='❌ Reject';
+
+    reject.onclick=async()=>{
+     if(!confirm('Reject this payment request?'))return;
+     try{
+      await api('/api/admin/reject/'+o.id,{method:'POST'});
+      await load();
+     }catch(err){alert(err.message)}
+    };
+
+    a.append(approve,reject);
+   }
+
+   if(o.status==='approved'){
+    const btn=document.createElement('button');
+    btn.textContent='🔗 Get access link';
+    btn.onclick=async()=>{
+     try{
+      const v=await api('/api/admin/approve/'+o.id,{method:'POST'});
+      showLink(v);
+     }catch(err){alert(err.message)}
+    };
+    a.append(btn);
+   }
+
+   el.append(a);
+  });
+ }catch(e){el.textContent=e.message}
+}
+
+async function showLink(v){
+ try{
+  await navigator.clipboard.writeText(v.url);
+  alert('Access link copied! Send via WhatsApp to '+v.phone+'\n'+v.url);
+ }catch(e){
+  prompt('Copy this private access link and send via WhatsApp:',v.url);
+ }
+}
+
+books();
+load();
+</script>
+</body>
+</html>
