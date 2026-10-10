@@ -13,6 +13,7 @@ input{margin:8px}
 article{border-top:1px solid #ddd;padding:15px 0;overflow-wrap:anywhere}
 .approve{background:#16803c;color:white;border:0}
 .reject{background:#c62828;color:white;border:0}
+.whatsapp{background:#25d366;color:#102c18;border:0}
 .status{font-weight:bold}
 </style>
 </head>
@@ -64,6 +65,46 @@ async function books(){
  });
 }
 
+async function getAccess(o){
+ return await api('/api/admin/approve/'+
+  encodeURIComponent(o.id),{method:'POST'});
+}
+
+function showLink(v){
+ const message='Access link for '+v.phone+':\n'+v.url;
+ if(navigator.clipboard && navigator.clipboard.writeText){
+  navigator.clipboard.writeText(v.url).then(()=>{
+   alert('Access link copied!\n'+message);
+  }).catch(()=>prompt('Copy access link:',v.url));
+ }else{
+  prompt('Copy access link:',v.url);
+ }
+}
+
+function sendWhatsApp(v){
+ const phone=String(v.phone||'').replace(/\D/g,'');
+ if(phone.length<10){
+  alert('Invalid customer WhatsApp number.');
+  return;
+ }
+ const international=phone.length===10?'977'+phone:phone;
+ const message=
+  'Namaste! 🎉\n\n'+
+  'Your Rs.99 English Speaking Course payment has been verified.\n\n'+
+  'Download all 5 PDF books using your private link:\n'+
+  v.url+'\n\n'+
+  'Thank you!';
+ const url='https://wa.me/'+international+
+  '?text='+encodeURIComponent(message);
+ const a=document.createElement('a');
+ a.href=url;
+ a.target='_blank';
+ a.rel='noopener noreferrer';
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+}
+
 async function load(){
  try{
   const orders=await api('/api/admin/orders');
@@ -73,7 +114,8 @@ async function load(){
    const a=document.createElement('article');
 
    const h=document.createElement('p');
-   h.textContent=`${o.name} | ${o.phone} | Txn: ${o.transaction} | ${o.createdAt}`;
+   h.textContent=
+    `${o.name} | ${o.phone} | Txn: ${o.transaction} | ${o.createdAt}`;
    a.append(h);
 
    const status=document.createElement('p');
@@ -83,7 +125,7 @@ async function load(){
 
    if(o.proof){
     const link=document.createElement('a');
-    link.href='/api/admin/proof/'+o.id;
+    link.href='/api/admin/proof/'+encodeURIComponent(o.id);
     link.target='_blank';
     link.textContent='View screenshot';
     a.append(link,document.createElement('br'));
@@ -97,9 +139,9 @@ async function load(){
     approve.onclick=async()=>{
      if(!confirm('Have you verified Rs.99 in your bank/wallet?'))return;
      try{
-      const v=await api('/api/admin/approve/'+o.id,{method:'POST'});
-      showLink(v);
+      await getAccess(o);
       await load();
+      alert('Payment approved! Now tap Send on WhatsApp.');
      }catch(err){alert(err.message)}
     };
 
@@ -110,7 +152,8 @@ async function load(){
     reject.onclick=async()=>{
      if(!confirm('Reject this payment request?'))return;
      try{
-      await api('/api/admin/reject/'+o.id,{method:'POST'});
+      await api('/api/admin/reject/'+
+       encodeURIComponent(o.id),{method:'POST'});
       await load();
      }catch(err){alert(err.message)}
     };
@@ -123,25 +166,27 @@ async function load(){
     btn.textContent='🔗 Get access link';
     btn.onclick=async()=>{
      try{
-      const v=await api('/api/admin/approve/'+o.id,{method:'POST'});
+      const v=await getAccess(o);
       showLink(v);
      }catch(err){alert(err.message)}
     };
-    a.append(btn);
+
+    const wa=document.createElement('button');
+    wa.className='whatsapp';
+    wa.textContent='🟢 Send on WhatsApp';
+    wa.onclick=async()=>{
+     try{
+      const v=await getAccess(o);
+      sendWhatsApp(v);
+     }catch(err){alert(err.message)}
+    };
+
+    a.append(btn,wa);
    }
 
    el.append(a);
   });
  }catch(e){el.textContent=e.message}
-}
-
-async function showLink(v){
- try{
-  await navigator.clipboard.writeText(v.url);
-  alert('Access link copied! Send via WhatsApp to '+v.phone+'\n'+v.url);
- }catch(e){
-  prompt('Copy this private access link and send via WhatsApp:',v.url);
- }
 }
 
 books();
