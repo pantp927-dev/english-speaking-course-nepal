@@ -19,6 +19,36 @@ app.get('/api/admin/proof/:id',admin,(req,res)=>{const f=path.join(proofDir,path
 app.post('/api/admin/ebooks/:part',admin,upload.single('ebook'),(req,res)=>{const n=Number(req.params.part);if(!Number.isInteger(n)||n<1||n>5||!req.file||req.file.mimetype!=='application/pdf'||req.file.buffer.subarray(0,5).toString()!=='%PDF-')return res.status(400).json({error:'Upload a PDF for Part 1–5 (max 8MB).'});fs.writeFileSync(path.join(pdfDir,`part${n}.pdf`),req.file.buffer,{mode:0o600});res.json({ok:true})});
 app.get('/api/admin/ebooks',admin,(_,res)=>res.json([1,2,3,4,5].map(n=>({part:n,uploaded:fs.existsSync(path.join(pdfDir,`part${n}.pdf`))}))));
 app.post('/api/admin/approve/:id',admin,(req,res)=>{if(![1,2,3,4,5].every(n=>fs.existsSync(path.join(pdfDir,`part${n}.pdf`))))return res.status(409).json({error:'Upload all five PDFs before approving orders.'});const orders=read(),o=orders.find(x=>x.id===req.params.id);if(!o)return res.sendStatus(404);o.status='approved';o.token=o.token||crypto.randomBytes(32).toString('hex');o.approvedAt=new Date().toISOString();write(orders);const origin=process.env.PUBLIC_URL||`${req.protocol}://${req.get('host')}`;res.json({url:`${origin}/access/${o.token}`,phone:o.phone})});
+
+app.post('/api/admin/reject/:id',admin,(req,res)=>{
+  try {
+    const orders=read();
+    const o=orders.find(x=>x.id===req.params.id);
+
+    if(!o) return res.status(404).json({
+      error:'Payment request not found.'
+    });
+
+    if(o.status==='approved') {
+      return res.status(409).json({
+        error:'Approved payment cannot be rejected.'
+      });
+    }
+
+    o.status='rejected';
+    o.token=null;
+    o.rejectedAt=new Date().toISOString();
+
+    write(orders);
+    res.json({ok:true,status:'rejected'});
+  } catch(err) {
+    console.error(err);
+    res.status(500).json({
+      error:'Could not reject payment.'
+    });
+  }
+});
+
 app.get('/access/:token',(req,res)=>{const o=read().find(x=>x.token===req.params.token&&x.status==='approved');if(!o)return res.status(404).send('Invalid access link');res.type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>Your 5 English Course Books</title><style>body{font:18px system-ui;max-width:600px;margin:40px auto;padding:20px;color:#0b3056}a{display:block;padding:18px;margin:12px 0;background:#135187;color:white;border-radius:12px;text-decoration:none}</style></head><body><h1>🎉 Your English Speaking Course</h1><p>Payment verified. Download all five PDFs below. Keep this private link safe.</p>${[1,2,3,4,5].map(n=>`<a href="/download/${o.token}/${n}">📘 Download Part ${n}</a>`).join('')}</body></html>`)});
 app.get('/download/:token/:part',(req,res)=>{const o=read().find(x=>x.token===req.params.token&&x.status==='approved'),n=Number(req.params.part);if(!o||!Number.isInteger(n)||n<1||n>5)return res.sendStatus(404);const f=path.join(pdfDir,`part${n}.pdf`);if(!fs.existsSync(f))return res.sendStatus(404);res.download(f,`English-Speaking-Course-Part-${n}.pdf`)});
 app.use((err,req,res,next)=>{if(err.code==='LIMIT_FILE_SIZE')return res.status(413).json({error:'File exceeds 8 MB.'});console.error(err);res.status(500).json({error:'Unexpected error.'})});
