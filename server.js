@@ -12,7 +12,67 @@ app.use(express.static(path.join(__dirname,'public'),{extensions:['html'],index:
 app.get('/health',(_,res)=>res.json({status:'ok'}));
 const hits=new Map();function limit(req,res,next){const ip=req.ip,now=Date.now(),v=hits.get(ip)||[];const recent=v.filter(x=>now-x<3600000);if(recent.length>=12)return res.status(429).json({error:'Too many submissions. Try later.'});recent.push(now);hits.set(ip,recent);next()}
 function admin(req,res,next){const configured=process.env.ADMIN_PASSWORD;if(!configured||configured.length<12)return res.status(503).send('Set ADMIN_PASSWORD (12+ characters) in Railway first.');const auth=req.headers.authorization||'';let pass='';try{if(auth.startsWith('Basic '))pass=Buffer.from(auth.slice(6),'base64').toString().split(':').slice(1).join(':')}catch{};const a=Buffer.from(pass),b=Buffer.from(configured);if(a.length!==b.length||!crypto.timingSafeEqual(a,b)){res.set('WWW-Authenticate','Basic realm="Course Admin"');return res.status(401).send('Admin authentication required')}next()}
-app.post('/api/orders',limit,upload.single('proof'),(req,res)=>{try{const {name,phone,transaction}=req.body;const clean=x=>String(x||'').trim();if(!clean(name)||clean(name).length>80||!/^[+\d\s-]{8,20}$/.test(clean(phone))||clean(transaction).length<4||clean(transaction).length>100)return res.status(400).json({error:'Please enter valid name, phone and transaction ID.'});if(req.file&&!['image/png','image/jpeg','image/webp'].includes(req.file.mimetype))return res.status(400).json({error:'Screenshot must be PNG, JPG or WebP.'});const id=crypto.randomUUID();if(req.file)fs.writeFileSync(path.join(proofDir,id),req.file.buffer,{mode:0o600});const orders=read();orders.push({id,name:clean(name),phone:clean(phone),transaction:clean(transaction),proof:!!req.file,status:'pending',createdAt:new Date().toISOString(),token:null});write(orders);res.status(201).json({id,message:'Request received. Payment will be checked manually.'})}catch(e){console.error(e);res.status(500).json({error:'Submission failed. Please try again.'})}});
+app.post('/api/orders',limit,upload.single('proof'),(req,res)=>{
+  try{
+    const {name,phone}=req.body;
+    const clean=x=>String(x||'').trim();
+
+    if(
+      !clean(name) ||
+      clean(name).length>80 ||
+      !/^[+\d\s-]{8,20}$/.test(clean(phone))
+    ){
+      return res.status(400).json({
+        error:'Please enter valid name and WhatsApp number.'
+      });
+    }
+
+    if(!req.file){
+      return res.status(400).json({
+        error:'Please upload payment screenshot.'
+      });
+    }
+
+    if(!['image/png','image/jpeg','image/webp'].includes(req.file.mimetype)){
+      return res.status(400).json({
+        error:'Screenshot must be PNG, JPG or WebP.'
+      });
+    }
+
+    const id=crypto.randomUUID();
+
+    fs.writeFileSync(
+      path.join(proofDir,id),
+      req.file.buffer,
+      {mode:0o600}
+    );
+
+    const orders=read();
+
+    orders.push({
+      id,
+      name:clean(name),
+      phone:clean(phone),
+      proof:true,
+      status:'pending',
+      createdAt:new Date().toISOString(),
+      token:null
+    });
+
+    write(orders);
+
+    res.status(201).json({
+      id,
+      message:'Request received. Payment will be checked manually.'
+    });
+
+  }catch(e){
+    console.error(e);
+    res.status(500).json({
+      error:'Submission failed. Please try again.'
+    });
+  }
+});
 app.get('/admin',admin,(req,res)=>res.sendFile(path.join(__dirname,'admin.html')));
 app.get('/api/admin/orders',admin,(req,res)=>res.json(read().map(({token,...o})=>({...o,hasAccess:!!token}))));
 app.get('/api/admin/proof/:id',admin,(req,res)=>{const f=path.join(proofDir,path.basename(req.params.id));if(!fs.existsSync(f))return res.sendStatus(404);res.type('image/jpeg').sendFile(f)});
